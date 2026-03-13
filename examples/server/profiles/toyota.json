@@ -1,0 +1,16 @@
+{
+  "vehicle": "Toyota Corolla",
+  "pids": {
+    "010C": { "mode": "random", "min": 700, "max": 5500 },
+    "010D": { "mode": "random", "min": 0, "max": 160 },
+    "0110": { "mode": "fixed", "value": 42 },
+    "012F": { "mode": "random", "min": 0, "max": 100 },
+    "0105": { "mode": "random", "min": 85, "max": 105 },
+    "010B": { "mode": "random", "min": 0, "max": 100 },
+    "010E": { "mode": "random", "min": -40, "max": 40 },
+    "010F": { "mode": "random", "min": 0, "max": 255 },
+    "0111": { "mode": "random", "min": 0, "max": 100 },
+    "011C": { "mode": "fixed", "value": 1 },
+    "0100": { "mode": "unsupported" }
+  }
+} 

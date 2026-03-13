@@ -1,0 +1,15 @@
+{
+  "vehicle": "Ford Focus MK4",
+  "pids": {
+    "010C": { "mode": "random", "min": 800, "max": 6000 },
+    "010D": { "mode": "random", "min": 0, "max": 180 },
+    "0110": { "mode": "fixed", "value": 45 },
+    "012F": { "mode": "unsupported" },
+    "0105": { "mode": "random", "min": 80, "max": 110 },
+    "010B": { "mode": "random", "min": 0, "max": 100 },
+    "010E": { "mode": "random", "min": -50, "max": 50 },
+    "010F": { "mode": "random", "min": 0, "max": 255 },
+    "0111": { "mode": "random", "min": 0, "max": 100 },
+    "011C": { "mode": "fixed", "value": 1 }
+  }
+} 

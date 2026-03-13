@@ -1,0 +1,17 @@
+{
+  "vehicle": "Volkswagen Golf",
+  "pids": {
+    "010C": { "mode": "random", "min": 750, "max": 5800 },
+    "010D": { "mode": "random", "min": 0, "max": 170 },
+    "0110": { "mode": "fixed", "value": 48 },
+    "012F": { "mode": "random", "min": 0, "max": 100 },
+    "0105": { "mode": "random", "min": 82, "max": 108 },
+    "010B": { "mode": "random", "min": 0, "max": 100 },
+    "010E": { "mode": "random", "min": -45, "max": 45 },
+    "010F": { "mode": "random", "min": 0, "max": 255 },
+    "0111": { "mode": "random", "min": 0, "max": 100 },
+    "011C": { "mode": "fixed", "value": 1 },
+    "0101": { "mode": "unsupported" },
+    "0102": { "mode": "unsupported" }
+  }
+} 
