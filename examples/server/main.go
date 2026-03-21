@@ -360,6 +360,20 @@ func (s *ELM327Simulator) HandlePID(pid string) (string, bool) {
 	}
 }
 
+// Handle implements the elm327.HandlerFunc signature by combining HandleAT and HandlePID.
+func (s *ELM327Simulator) Handle(command string) (string, bool) {
+	command = strings.ToUpper(strings.TrimSpace(command))
+	normalized := strings.ReplaceAll(command, " ", "")
+
+	if strings.HasPrefix(normalized, "AT") || strings.HasPrefix(normalized, "ST") || strings.HasPrefix(normalized, "VT") {
+		return s.HandleAT(command)
+	}
+	if len(normalized) >= 4 {
+		return s.HandlePID(normalized)
+	}
+	return "", false
+}
+
 func (s *ELM327Simulator) joinLines(lines ...string) string {
 	sep := "\r"
 	if s.linefeed {
@@ -456,7 +470,7 @@ func main() {
 
 	rand.Seed(time.Now().UnixNano())
 	h := NewELM327Simulator()
-	err := elm327.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), h)
+	err := elm327.ListenAndServe(fmt.Sprintf("0.0.0.0:%d", port), h.Handle)
 	if err != nil {
 		log.Fatalf("Listen and serve failed: %v", err)
 	}

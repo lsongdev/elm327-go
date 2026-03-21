@@ -7,14 +7,14 @@ import (
 	"strings"
 )
 
-type Handler interface {
-	// HandleAT should return (response, true) if handled.
-	HandleAT(command string) (string, bool)
-	// HandlePID should return (response, true) if handled.
-	HandlePID(command string) (string, bool)
-}
+// HandlerFunc is a function that handles AT and PID commands.
+// It should return (response, true) if the command is handled,
+// or (response, false) if the command should be handled by default logic.
+type HandlerFunc func(command string) (response string, handled bool)
 
-func ListenAndServe(addr string, h Handler) (err error) {
+// ListenAndServe starts a TCP server on the given address and handles
+// incoming ELM327 commands using the provided handler function.
+func ListenAndServe(addr string, handler HandlerFunc) (err error) {
 	log.Println("Listening on", addr)
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
@@ -27,11 +27,11 @@ func ListenAndServe(addr string, h Handler) (err error) {
 			continue
 		}
 
-		go handleClient(conn, h)
+		go handleClient(conn, handler)
 	}
 }
 
-func handleClient(conn net.Conn, h Handler) {
+func handleClient(conn net.Conn, handler HandlerFunc) {
 	defer conn.Close()
 	log.Println("Client connected")
 
@@ -55,21 +55,14 @@ func handleClient(conn net.Conn, h Handler) {
 		var response string
 		handled := false
 
-		upper := strings.ToUpper(command)
-		normalized := normalizeCommand(upper)
-
-		if h != nil && (strings.HasPrefix(normalized, "AT") || strings.HasPrefix(normalized, "ST") || strings.HasPrefix(normalized, "VT")) {
-			if r, ok := h.HandleAT(normalized); ok {
-				response, handled = r, true
-			}
-		} else if h != nil && len(normalized) >= 4 { // OBD2 PID (e.g. 010C)
-			if r, ok := h.HandlePID(normalized); ok {
-				response, handled = r, true
-			}
+		if handler != nil {
+			response, handled = handler(command)
 		}
 
 		if !handled {
 			// Reasonable defaults.
+			upper := strings.ToUpper(command)
+			normalized := normalizeCommand(upper)
 			if normalized == "?" {
 				response = "?"
 			} else if strings.HasPrefix(normalized, "AT") {

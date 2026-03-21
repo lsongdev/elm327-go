@@ -149,12 +149,12 @@ func (c *Client) ReadPIDBytes(pid string) ([]byte, error) {
 // EngineRPM returns engine speed in RPM (PID 010C).
 // Formula: RPM = ((A*256)+B)/4
 func (c *Client) EngineRPM() (float64, error) {
-	b, err := c.ReadPIDBytes("010C")
+	b, err := c.ReadPIDBytes(PIDEngineRPM)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 2 {
-		return 0, fmt.Errorf("pid 010C expected 2 bytes, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 2 bytes, got %d", PIDEngineRPM, len(b))
 	}
 	v := (int(b[0])*256 + int(b[1]))
 	return float64(v) / 4.0, nil
@@ -163,12 +163,12 @@ func (c *Client) EngineRPM() (float64, error) {
 // VehicleSpeed returns vehicle speed in km/h (PID 010D).
 // Formula: km/h = A
 func (c *Client) VehicleSpeed() (int, error) {
-	b, err := c.ReadPIDBytes("010D")
+	b, err := c.ReadPIDBytes(PIDVehicleSpeed)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 010D expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDVehicleSpeed, len(b))
 	}
 	return int(b[0]), nil
 }
@@ -176,12 +176,12 @@ func (c *Client) VehicleSpeed() (int, error) {
 // EngineCoolantTemp returns coolant temperature in °C (PID 0105).
 // Formula: °C = A - 40
 func (c *Client) EngineCoolantTemp() (int, error) {
-	b, err := c.ReadPIDBytes("0105")
+	b, err := c.ReadPIDBytes(PIDEngineCoolantTemp)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 0105 expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDEngineCoolantTemp, len(b))
 	}
 	return int(b[0]) - 40, nil
 }
@@ -189,12 +189,12 @@ func (c *Client) EngineCoolantTemp() (int, error) {
 // IntakeAirTemp returns intake air temperature in °C (PID 010F).
 // Formula: °C = A - 40
 func (c *Client) IntakeAirTemp() (int, error) {
-	b, err := c.ReadPIDBytes("010F")
+	b, err := c.ReadPIDBytes(PIDIntakeAirTemp)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 010F expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDIntakeAirTemp, len(b))
 	}
 	return int(b[0]) - 40, nil
 }
@@ -202,12 +202,12 @@ func (c *Client) IntakeAirTemp() (int, error) {
 // EngineLoad returns calculated engine load in percent (PID 0104).
 // Formula: % = (A * 100) / 255
 func (c *Client) EngineLoad() (float64, error) {
-	b, err := c.ReadPIDBytes("0104")
+	b, err := c.ReadPIDBytes(PIDEngineLoad)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 0104 expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDEngineLoad, len(b))
 	}
 	return float64(b[0]) * 100.0 / 255.0, nil
 }
@@ -215,12 +215,12 @@ func (c *Client) EngineLoad() (float64, error) {
 // ThrottlePosition returns throttle position in percent (PID 0111).
 // Formula: % = (A * 100) / 255
 func (c *Client) ThrottlePosition() (float64, error) {
-	b, err := c.ReadPIDBytes("0111")
+	b, err := c.ReadPIDBytes(PIDThrottlePosition)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 0111 expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDThrottlePosition, len(b))
 	}
 	return float64(b[0]) * 100.0 / 255.0, nil
 }
@@ -228,12 +228,12 @@ func (c *Client) ThrottlePosition() (float64, error) {
 // IntakeMAP returns intake manifold absolute pressure in kPa (PID 010B).
 // Formula: kPa = A
 func (c *Client) IntakeMAP() (int, error) {
-	b, err := c.ReadPIDBytes("010B")
+	b, err := c.ReadPIDBytes(PIDIntakeMAP)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 010B expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDIntakeMAP, len(b))
 	}
 	return int(b[0]), nil
 }
@@ -241,12 +241,12 @@ func (c *Client) IntakeMAP() (int, error) {
 // MAF returns mass air flow in g/s (PID 0110).
 // Formula: g/s = ((A*256)+B) / 100
 func (c *Client) MAF() (float64, error) {
-	b, err := c.ReadPIDBytes("0110")
+	b, err := c.ReadPIDBytes(PIDMAF)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 2 {
-		return 0, fmt.Errorf("pid 0110 expected 2 bytes, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 2 bytes, got %d", PIDMAF, len(b))
 	}
 	v := (int(b[0])*256 + int(b[1]))
 	return float64(v) / 100.0, nil
@@ -255,12 +255,12 @@ func (c *Client) MAF() (float64, error) {
 // TimingAdvance returns timing advance in degrees (PID 010E).
 // Formula: ° = (A / 2) - 64
 func (c *Client) TimingAdvance() (float64, error) {
-	b, err := c.ReadPIDBytes("010E")
+	b, err := c.ReadPIDBytes(PIDTimingAdvance)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 010E expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDTimingAdvance, len(b))
 	}
 	return float64(b[0])/2.0 - 64.0, nil
 }
@@ -268,12 +268,12 @@ func (c *Client) TimingAdvance() (float64, error) {
 // FuelLevel returns fuel tank level input in percent (PID 012F).
 // Formula: % = (A * 100) / 255
 func (c *Client) FuelLevel() (float64, error) {
-	b, err := c.ReadPIDBytes("012F")
+	b, err := c.ReadPIDBytes(PIDFuelLevel)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 012F expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDFuelLevel, len(b))
 	}
 	return float64(b[0]) * 100.0 / 255.0, nil
 }
@@ -281,12 +281,12 @@ func (c *Client) FuelLevel() (float64, error) {
 // ControlModuleVoltage returns control module voltage in volts (PID 0142).
 // Formula: V = ((A*256)+B) / 1000
 func (c *Client) ControlModuleVoltage() (float64, error) {
-	b, err := c.ReadPIDBytes("0142")
+	b, err := c.ReadPIDBytes(PIDControlModuleVoltage)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 2 {
-		return 0, fmt.Errorf("pid 0142 expected 2 bytes, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 2 bytes, got %d", PIDControlModuleVoltage, len(b))
 	}
 	v := (int(b[0])*256 + int(b[1]))
 	return float64(v) / 1000.0, nil
@@ -295,12 +295,12 @@ func (c *Client) ControlModuleVoltage() (float64, error) {
 // RuntimeSinceEngineStart returns engine run time in seconds (PID 011F).
 // Formula: seconds = (A*256)+B
 func (c *Client) RuntimeSinceEngineStart() (int, error) {
-	b, err := c.ReadPIDBytes("011F")
+	b, err := c.ReadPIDBytes(PIDRuntimeSinceEngineStart)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 2 {
-		return 0, fmt.Errorf("pid 011F expected 2 bytes, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 2 bytes, got %d", PIDRuntimeSinceEngineStart, len(b))
 	}
 	return int(b[0])*256 + int(b[1]), nil
 }
@@ -308,12 +308,12 @@ func (c *Client) RuntimeSinceEngineStart() (int, error) {
 // BarometricPressure returns barometric pressure in kPa (PID 0133).
 // Formula: kPa = A
 func (c *Client) BarometricPressure() (int, error) {
-	b, err := c.ReadPIDBytes("0133")
+	b, err := c.ReadPIDBytes(PIDBarometricPressure)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 0133 expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDBarometricPressure, len(b))
 	}
 	return int(b[0]), nil
 }
@@ -321,12 +321,12 @@ func (c *Client) BarometricPressure() (int, error) {
 // AmbientAirTemp returns ambient air temperature in °C (PID 0146).
 // Formula: °C = A - 40
 func (c *Client) AmbientAirTemp() (int, error) {
-	b, err := c.ReadPIDBytes("0146")
+	b, err := c.ReadPIDBytes(PIDAmbientAirTemp)
 	if err != nil {
 		return 0, err
 	}
 	if len(b) < 1 {
-		return 0, fmt.Errorf("pid 0146 expected 1 byte, got %d", len(b))
+		return 0, fmt.Errorf("pid %s expected 1 byte, got %d", PIDAmbientAirTemp, len(b))
 	}
 	return int(b[0]) - 40, nil
 }
