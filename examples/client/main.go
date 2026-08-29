@@ -49,6 +49,9 @@ func main() {
 		log.Fatal(err)
 	}
 	defer client.Close()
+	if err := client.Initialize(); err != nil {
+		log.Fatalf("Initialize adapter: %v", err)
+	}
 
 	enterAltScreen()
 	defer exitAltScreen()

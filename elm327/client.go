@@ -2,12 +2,21 @@ package elm327
 
 import (
 	"bufio"
+	"context"
 	"fmt"
+	"io"
 	"net"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+)
+
+const (
+	defaultConnectTimeout = 10 * time.Second
+	defaultReadTimeout    = 10 * time.Second
+	defaultWriteTimeout   = 5 * time.Second
+	defaultSyncTimeout    = 150 * time.Millisecond
+	defaultMaxResponse    = 64 << 10
 )
 
 type Client struct {
@@ -22,15 +31,48 @@ type Client struct {
 	// WriteTimeout applies to writing a command (including trailing \r).
 	// Zero means 5 seconds.
 	WriteTimeout time.Duration
+
+	// ConnectTimeout applies while establishing the TCP connection. Zero means
+	// 10 seconds.
+	ConnectTimeout time.Duration
+
+	// SyncTimeout is the maximum time Connect waits for an optional prompt that
+	// is already being sent by the adapter. Zero means 150 milliseconds.
+	SyncTimeout time.Duration
+
+	// MaxResponseSize limits a response before the '>' prompt. Zero means 64 KiB.
+	MaxResponseSize int
 }
 
-func (c *Client) Connect(addr string) (err error) {
-	conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+// Connect establishes a TCP connection to a Wi-Fi ELM327 adapter.
+func (c *Client) Connect(addr string) error {
+	return c.ConnectContext(context.Background(), addr)
+}
+
+// ConnectContext establishes a TCP connection and consumes an optional prompt
+// already waiting on the connection. It is safe to reconnect an existing Client.
+func (c *Client) ConnectContext(ctx context.Context, addr string) error {
+	timeout := c.ConnectTimeout
+	if timeout == 0 {
+		timeout = defaultConnectTimeout
+	}
+	dialer := net.Dialer{Timeout: timeout}
+	conn, err := dialer.DialContext(ctx, "tcp", addr)
 	if err != nil {
 		return fmt.Errorf("failed to connect to %s: %w", addr, err)
 	}
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
 	c.conn = conn
 	c.r = bufio.NewReader(conn)
+	if err := c.consumeInitialPromptLocked(); err != nil {
+		c.invalidateLocked()
+		return fmt.Errorf("failed to synchronize with %s: %w", addr, err)
+	}
 	return nil
 }
 
@@ -47,32 +89,83 @@ func (c *Client) Close() error {
 }
 
 func (c *Client) Call(command string) (resp string, err error) {
+	return c.call(command, false)
+}
+
+// Repeat sends only a carriage return, asking the ELM327 to execute its last
+// command again. This is useful for high-frequency polling.
+func (c *Client) Repeat() (resp string, err error) {
+	return c.call("", true)
+}
+
+// Initialize resets the adapter and selects predictable formatting with
+// automatic protocol detection. Call it after Connect unless preserving the
+// adapter's existing configuration is intentional.
+func (c *Client) Initialize() error {
+	if _, err := c.Call("ATZ"); err != nil {
+		return fmt.Errorf("reset adapter: %w", err)
+	}
+	for _, command := range []string{"ATE0", "ATL0", "ATS1", "ATH0", "ATCAF1", "ATSP0"} {
+		response, err := c.Call(command)
+		if err != nil {
+			return fmt.Errorf("initialize adapter with %s: %w", command, err)
+		}
+		if !containsResponseLine(response, "OK") {
+			return fmt.Errorf("initialize adapter with %s: unexpected response %q", command, response)
+		}
+	}
+	return nil
+}
+
+func (c *Client) call(command string, allowEmpty bool) (resp string, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.conn == nil {
 		return "", fmt.Errorf("not connected")
 	}
 
-	if strings.TrimSpace(command) == "" {
+	command = strings.TrimSpace(command)
+	if command == "" && !allowEmpty {
 		return "", fmt.Errorf("empty command")
+	}
+	if strings.ContainsAny(command, "\r\n\x00") {
+		return "", fmt.Errorf("command contains a line terminator")
 	}
 
 	writeTimeout := c.WriteTimeout
 	if writeTimeout == 0 {
-		writeTimeout = 5 * time.Second
+		writeTimeout = defaultWriteTimeout
 	}
-	_ = c.conn.SetWriteDeadline(time.Now().Add(writeTimeout))
-	_, err = c.conn.Write([]byte(strings.TrimSpace(command) + "\r"))
-	if err != nil {
+	if err := c.conn.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		c.invalidateLocked()
+		return "", fmt.Errorf("failed to set write deadline: %w", err)
+	}
+	if err := writeFull(c.conn, []byte(command+"\r")); err != nil {
+		c.invalidateLocked()
 		return "", fmt.Errorf("failed to send command: %w", err)
 	}
 
 	readTimeout := c.ReadTimeout
 	if readTimeout == 0 {
-		readTimeout = 10 * time.Second
+		readTimeout = defaultReadTimeout
 	}
-	_ = c.conn.SetReadDeadline(time.Now().Add(readTimeout))
-	return c.readResponseLocked()
+	if err := c.conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+		c.invalidateLocked()
+		return "", fmt.Errorf("failed to set read deadline: %w", err)
+	}
+
+	// Ignore stray empty prompts. They are common when a TCP bridge connects to
+	// an ELM327 that was already idle, and must not shift request/response pairs.
+	for {
+		resp, err = c.readResponseLocked()
+		if err != nil {
+			c.invalidateLocked()
+			return "", err
+		}
+		if resp != "" || allowEmpty {
+			return resp, nil
+		}
+	}
 }
 
 // func (c *Client) ReadPID(pid string) (value string, err error) {
@@ -111,9 +204,13 @@ func (c *Client) readResponseLocked() (string, error) {
 		return "", fmt.Errorf("not connected")
 	}
 
-	// ELM327 prompt is '>' and lines are typically separated by \r (sometimes \n too).
-	// We read until the prompt byte is observed, then normalize whitespace.
+	// Preserve line boundaries: echo, status text, CAN headers and multiple ECU
+	// replies must be parsed as separate lines.
 	var b strings.Builder
+	maxResponse := c.MaxResponseSize
+	if maxResponse <= 0 {
+		maxResponse = defaultMaxResponse
+	}
 	for {
 		ch, err := c.r.ReadByte()
 		if err != nil {
@@ -122,28 +219,36 @@ func (c *Client) readResponseLocked() (string, error) {
 		if ch == '>' {
 			break
 		}
-		// Normalize control chars to spaces so strings.Fields can do the rest.
-		if ch == '\r' || ch == '\n' || ch == '\t' {
-			b.WriteByte(' ')
-			continue
+		if b.Len() >= maxResponse {
+			return "", fmt.Errorf("response exceeds %d bytes", maxResponse)
 		}
 		b.WriteByte(ch)
 	}
-
-	// Collapse multiple spaces and trim.
-	return strings.Join(strings.Fields(b.String()), " "), nil
+	return normalizeResponse(b.String()), nil
 }
 
 // ReadPIDBytes reads a PID (e.g. "010C") and returns the data bytes from the response.
 // For a typical response like "41 0C 1A F8", it returns []byte{0x1A, 0xF8}.
 func (c *Client) ReadPIDBytes(pid string) ([]byte, error) {
-	pid = strings.ToUpper(strings.TrimSpace(pid))
-	// Use Call() to get the full raw line(s) (may include echo like "010C 41 0C ...").
+	responses, err := c.ReadPIDResponses(pid)
+	if err != nil {
+		return nil, err
+	}
+	return responses[0], nil
+}
+
+// ReadPIDResponses returns one decoded data payload per responding ECU. It
+// accepts normal, header-enabled and space-disabled ELM327 output.
+func (c *Client) ReadPIDResponses(pid string) ([][]byte, error) {
+	pid, err := normalizeMode01PID(pid)
+	if err != nil {
+		return nil, err
+	}
 	raw, err := c.Call(pid)
 	if err != nil {
 		return nil, err
 	}
-	return extractMode01DataBytes(pid, raw)
+	return extractMode01Responses(pid, raw)
 }
 
 // EngineRPM returns engine speed in RPM (PID 010C).
@@ -331,43 +436,58 @@ func (c *Client) AmbientAirTemp() (int, error) {
 	return int(b[0]) - 40, nil
 }
 
-func extractMode01DataBytes(pid string, rawResp string) ([]byte, error) {
-	resp := strings.TrimSpace(rawResp)
-	if resp == "" {
-		return []byte{}, nil
+func (c *Client) consumeInitialPromptLocked() error {
+	timeout := c.SyncTimeout
+	if timeout == 0 {
+		timeout = defaultSyncTimeout
 	}
-	// Some adapters echo the request, so you may see "012F NO DATA".
-	if strings.Contains(strings.ToUpper(resp), "NO DATA") {
-		return nil, fmt.Errorf("no data for pid %s", pid)
+	if timeout < 0 {
+		return nil
 	}
-
-	// We expect a Mode 01 response: "41 <pidByte> <data...>"
-	pidByte := ""
-	if len(pid) >= 4 {
-		pidByte = pid[2:4]
+	if err := c.conn.SetReadDeadline(time.Now().Add(timeout)); err != nil {
+		return err
 	}
-	parts := strings.Fields(resp)
-	for i := 0; i+2 < len(parts); i++ {
-		if strings.EqualFold(parts[i], "41") {
-			if pidByte == "" || strings.EqualFold(parts[i+1], pidByte) {
-				// Parse the remaining tokens as 1-byte hex values, but ignore any non-byte tokens
-				// (some adapters may include echoes or extra text).
-				dataParts := parts[i+2:]
-				out := make([]byte, 0, len(dataParts))
-				for _, f := range dataParts {
-					if len(f) != 2 {
-						// stop at first non-byte token
-						break
-					}
-					u, err := strconv.ParseUint(f, 16, 8)
-					if err != nil {
-						return nil, fmt.Errorf("invalid hex byte %q in %q: %w", f, rawResp, err)
-					}
-					out = append(out, byte(u))
-				}
-				return out, nil
-			}
+	initial, err := c.r.ReadString('>')
+	if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+		// No initial prompt is valid for many transparent Wi-Fi bridges. If any
+		// bytes were consumed, however, the stream is incomplete and unsafe.
+		if initial == "" {
+			return c.conn.SetReadDeadline(time.Time{})
 		}
 	}
-	return nil, fmt.Errorf("unexpected response for pid %s: %q", pid, rawResp)
+	if err != nil {
+		return err
+	}
+	return c.conn.SetReadDeadline(time.Time{})
+}
+
+func (c *Client) invalidateLocked() {
+	if c.conn != nil {
+		_ = c.conn.Close()
+	}
+	c.conn = nil
+	c.r = nil
+}
+
+func writeFull(w io.Writer, p []byte) error {
+	for len(p) > 0 {
+		n, err := w.Write(p)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		p = p[n:]
+	}
+	return nil
+}
+
+func containsResponseLine(response, want string) bool {
+	for _, line := range strings.Split(response, "\n") {
+		if strings.EqualFold(strings.TrimSpace(line), want) {
+			return true
+		}
+	}
+	return false
 }

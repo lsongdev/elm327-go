@@ -54,12 +54,23 @@ func main() {
 	defer ln.Close()
 
 	log.Printf("proxy listening on %s (upstream %s)", listenAddr, upstreamAddr)
+	var acceptDelay time.Duration
 	for {
 		c, err := ln.Accept()
 		if err != nil {
-			log.Printf("accept: %v", err)
+			if acceptDelay == 0 {
+				acceptDelay = 5 * time.Millisecond
+			} else {
+				acceptDelay *= 2
+			}
+			if acceptDelay > time.Second {
+				acceptDelay = time.Second
+			}
+			log.Printf("accept: %v; retrying in %v", err, acceptDelay)
+			time.Sleep(acceptDelay)
 			continue
 		}
+		acceptDelay = 0
 		go handleConn(c, upstreamAddr, logger)
 	}
 }
@@ -127,7 +138,7 @@ func forwardWithCapture(id int64, dir string, src net.Conn, dst net.Conn, logger
 		n, err := r.Read(tmp)
 		if n > 0 {
 			// Forward immediately.
-			if _, werr := dst.Write(tmp[:n]); werr != nil {
+			if werr := writeAll(dst, tmp[:n]); werr != nil {
 				flush("dst write error")
 				return
 			}
@@ -139,6 +150,8 @@ func forwardWithCapture(id int64, dir string, src net.Conn, dst net.Conn, logger
 					flush("line")
 				} else if b == '>' {
 					flush("prompt")
+				} else if len(buf) >= 64<<10 {
+					flush("capture limit")
 				}
 			}
 		}
@@ -151,4 +164,18 @@ func forwardWithCapture(id int64, dir string, src net.Conn, dst net.Conn, logger
 			return
 		}
 	}
+}
+
+func writeAll(w io.Writer, data []byte) error {
+	for len(data) > 0 {
+		n, err := w.Write(data)
+		if err != nil {
+			return err
+		}
+		if n == 0 {
+			return io.ErrShortWrite
+		}
+		data = data[n:]
+	}
+	return nil
 }
