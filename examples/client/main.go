@@ -1,106 +1,77 @@
+// Command client prints every value a vehicle advertises, once per second, using
+// the elm327 client directly.
 package main
 
 import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
+	"slices"
 	"time"
 
-	elm327 "github.com/lsongdev/elm327-go/elm327"
+	"github.com/lsongdev/elm327-go/elm327"
+	"github.com/lsongdev/elm327-go/obd"
 )
 
-func enterAltScreen() {
-	// Alternate screen buffer + hide cursor.
-	// fmt.Print("\033[?1049h\033[?25l")
-}
-
-func exitAltScreen() {
-	// Show cursor + restore normal screen buffer.
-	fmt.Print("\033[?25h\033[?1049l")
-}
-
-func moveHome() {
-	// Move cursor to home (top-left) without clearing the whole screen.
-	fmt.Print("\033[H")
-}
-
-func clearLine() {
-	// Clear the current line.
-	fmt.Print("\033[2K")
-}
-
-func printlnf(format string, args ...any) {
-	clearLine()
-	fmt.Printf(format, args...)
-	fmt.Print("\n")
-}
-
 func main() {
-
-	var host, port string
-	flag.StringVar(&host, "host", "192.168.3.178", "host")
-	flag.StringVar(&port, "port", "35000", "port")
+	host := flag.String("host", "192.168.3.178", "adapter host")
+	port := flag.String("port", "35000", "adapter port")
+	once := flag.Bool("once", false, "print once and exit")
 	flag.Parse()
 
-	log.Println("Connecting to", fmt.Sprintf("%s:%s", host, port))
+	addr := net.JoinHostPort(*host, *port)
+	log.Println("Connecting to", addr)
 	client := &elm327.Client{}
-	err := client.Connect(fmt.Sprintf("%s:%s", host, port))
-	if err != nil {
+	if err := client.Connect(addr); err != nil {
 		log.Fatal(err)
 	}
 	defer client.Close()
 	if err := client.Initialize(); err != nil {
-		log.Fatalf("Initialize adapter: %v", err)
+		log.Fatalf("initialize adapter: %v", err)
+	}
+	pids, err := client.SupportedPIDs()
+	if err != nil {
+		log.Fatalf("read supported PIDs: %v", err)
+	}
+	pids = slices.DeleteFunc(pids, obd.IsBitmap)
+
+	if info, err := client.VehicleInfo(); err == nil && info.VIN != "" {
+		fmt.Println("VIN:", info.VIN)
+	}
+	for _, kind := range []obd.DTCKind{obd.DTCStored, obd.DTCPending} {
+		codes, err := client.ReadDTCs(kind)
+		if err != nil {
+			log.Fatalf("read trouble codes: %v", err)
+		}
+		for _, code := range codes {
+			fmt.Printf("DTC %s  %s\n", code.Code, code.Description)
+		}
 	}
 
-	enterAltScreen()
-	defer exitAltScreen()
-
-	ticker := time.NewTicker(1 * time.Second)
-	defer ticker.Stop()
-
-	for range ticker.C {
-		moveHome()
-
-		rpm, rpmErr := client.EngineRPM()
-		speed, speedErr := client.VehicleSpeed()
-		coolant, coolantErr := client.EngineCoolantTemp()
-		intake, intakeErr := client.IntakeAirTemp()
-		ambient, ambientErr := client.AmbientAirTemp()
-
-		load, loadErr := client.EngineLoad()
-		throttle, throttleErr := client.ThrottlePosition()
-		mapKPa, mapErr := client.IntakeMAP()
-		maf, mafErr := client.MAF()
-		timing, timingErr := client.TimingAdvance()
-
-		fuel, fuelErr := client.FuelLevel()
-		voltage, voltageErr := client.ControlModuleVoltage()
-		runtime, runtimeErr := client.RuntimeSinceEngineStart()
-		baro, baroErr := client.BarometricPressure()
-
-		now := time.Now().Format("2006-01-02 15:04:05")
-		printlnf("ELM327 live metrics  (%s) \t %s:%s", now, host, port)
-		fmt.Print("\n")
-
-		printlnf("%-26s %12s   %s", "Metric", "Value", "Error")
-		printlnf("%-26s %12s   %s", "--------------------------", "------------", "-----")
-
-		printlnf("%-26s %12.0f   %v", "Engine RPM", rpm, rpmErr)
-		printlnf("%-26s %12d   %v", "Vehicle Speed (km/h)", speed, speedErr)
-		printlnf("%-26s %12d   %v", "Coolant Temp (°C)", coolant, coolantErr)
-		printlnf("%-26s %12d   %v", "Intake Air Temp (°C)", intake, intakeErr)
-		printlnf("%-26s %12d   %v", "Ambient Air Temp (°C)", ambient, ambientErr)
-		fmt.Print("\n")
-		printlnf("%-26s %11.1f%%   %v", "Engine Load", load, loadErr)
-		printlnf("%-26s %11.1f%%   %v", "Throttle Position", throttle, throttleErr)
-		printlnf("%-26s %12d   %v", "Intake MAP (kPa)", mapKPa, mapErr)
-		printlnf("%-26s %12.2f   %v", "MAF (g/s)", maf, mafErr)
-		printlnf("%-26s %12.1f   %v", "Timing Advance (°)", timing, timingErr)
-		fmt.Print("\n")
-		printlnf("%-26s %11.1f%%   %v", "Fuel Level", fuel, fuelErr)
-		printlnf("%-26s %12.3f   %v", "Module Voltage (V)", voltage, voltageErr)
-		printlnf("%-26s %12d   %v", "Runtime (s)", runtime, runtimeErr)
-		printlnf("%-26s %12d   %v", "Barometric (kPa)", baro, baroErr)
+	for {
+		fmt.Printf("\n%s\n", time.Now().Format("15:04:05"))
+		for _, pid := range pids {
+			reading, err := client.ReadPID(pid)
+			if err != nil {
+				fmt.Printf("%02X  %-44s %v\n", pid, "", err)
+				continue
+			}
+			fmt.Printf("%02X  %-44s %s\n", pid, reading.Name, format(reading))
+		}
+		if *once {
+			return
+		}
+		time.Sleep(time.Second)
 	}
+}
+
+func format(r obd.Reading) string {
+	switch {
+	case r.Text != "":
+		return r.Text
+	case r.Value != nil:
+		return fmt.Sprintf("%.2f %s", *r.Value, r.Unit)
+	}
+	return r.Raw
 }

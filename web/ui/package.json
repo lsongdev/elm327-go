@@ -1,0 +1,9 @@
+{
+  "name": "elm327-go-ui",
+  "private": true,
+  "description": "Browser dependencies of this UI. Installed by npm ci (make deps) and embedded into the Go binary; node_modules is not committed.",
+  "dependencies": {
+    "@lsongdev/scripts": "0.1.0-rc.6",
+    "@lsongdev/stylesheets": "1.3.1"
+  }
+}

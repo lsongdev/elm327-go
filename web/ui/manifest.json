@@ -1,0 +1,16 @@
+{
+  "contract": 1,
+  "id": "elm327",
+  "title": "OBD-II",
+  "icon": "◉",
+  "entry": "module.js",
+  "styles": ["style.css", "obd.css"],
+  "home": "/",
+  "nav": [
+    { "path": "/", "title": "Dashboard", "icon": "◉", "group": "Vehicle" },
+    { "path": "/sensors", "title": "Sensors", "icon": "≋", "group": "Vehicle" },
+    { "path": "/diagnostics", "title": "Diagnostics", "icon": "⚠", "group": "Vehicle" },
+    { "path": "/vehicle", "title": "Vehicle", "icon": "▣", "group": "Vehicle" },
+    { "path": "/console", "title": "Console", "icon": "›", "group": "Adapter" }
+  ]
+}
